@@ -50,7 +50,7 @@ We present a fine-tuned Qwen2.5-14B-Instruct model that plays Minesweeper by out
 \section{Introduction}
 % ================================================================
 
-Minesweeper is a constraint satisfaction problem where an agent must reveal safe cells and flag mines on a grid. In this competition, an LLM must output a single JSON action \texttt{\{"type":"reveal"|"flag","row":R,"col":C\}} per turn, scoring +15 for safe reveals, +15 for correct flags, $-25$ for mine hits, $-10$ for wrong flags, $-12$ for redundant moves, and +50 for winning. Boards range from $6\times6$ to $50\times50$ with 10--20\% mine density.
+Minesweeper is a constraint satisfaction problem where an agent must reveal safe cells and flag mines on a grid. In this competition, an LLM must output a single JSON action per turn---e.g.\ \texttt{\{"type":"reveal","row":3,"col":5\}}---scoring +15 for safe reveals, +15 for correct flags, $-25$ for mine hits, $-10$ for wrong flags, $-12$ for redundant moves, and +50 for winning. Boards range from $6\times6$ to $50\times50$ with 10--20\% mine density.
 
 The core challenge is teaching an LLM to: (a)~parse spatial board information, (b)~perform constraint reasoning over numbered cells and their hidden neighbors, and (c)~output concise, valid JSON without verbose reasoning that would exceed the 128-token limit.
 
@@ -407,7 +407,7 @@ Key metrics: 100\% valid JSON, 100\% valid moves, 0\% verbose output ($\sim$20 t
 \section{Competition Compliance}
 % ================================================================
 
-\begin{itemize}
+\begin{itemize}[itemsep=4pt]
 \item[$\checkmark$] Base model: Qwen/Qwen2.5-14B-Instruct (approved list)
 \item[$\checkmark$] Model at \texttt{/workspace/your\_finetuned\_model\_v2} (28GB merged)
 \item[$\checkmark$] \texttt{max\_new\_tokens: 128} in config

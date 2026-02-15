@@ -1,0 +1,75 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{titlesec}
+
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\titlespacing*{\subsection}{0pt}{6pt}{3pt}
+\setlength{\parskip}{3pt}
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+{\Large\textbf{Minesweeper LLM Agent: Fine-Tuning Qwen2.5-14B for Competitive Play}}\\[4pt]
+{\normalsize Team 92 \quad$\cdot$\quad February 2026}
+\end{center}
+
+\vspace{-2pt}
+\hrule
+\vspace{6pt}
+
+\section*{Problem}
+
+An LLM must play Minesweeper by outputting a single JSON action per turn on boards from $6{\times}6$ to $50{\times}50$. Scoring: $+15$ safe reveal, $+15$ correct flag, $-25$ mine hit, $+50$ win.
+
+\section*{Approach}
+
+\textbf{1.\ Frontier prompt format (novel).}
+LLMs cannot reason spatially over ASCII grids (7--15\% valid moves). We replace the grid with an explicit \emph{frontier format} listing each numbered cell's value, flag count, and hidden neighbor coordinates. This converts spatial reasoning into constraint lookup $\rightarrow$ \textbf{100\% valid moves}.
+
+\textbf{2.\ Three-tier constraint solver for data generation.}
+We built a custom solver (Tier~1: single-cell propagation, Tier~2: set-based coupled constraints, Tier~3: backtracking Tank solver with Union-Find partitioning) achieving 94\% deducible actions. This generates high-quality training labels across 13 board sizes including rectangular boards.
+
+\textbf{3.\ Supervised fine-tuning with LoRA.}
+Qwen2.5-14B-Instruct fine-tuned with LoRA ($r{=}64$, $\alpha{=}128$, 275M/15B params) on 37K curated examples for 1 epoch. Continued SFT on 5K all-frontier examples produced the final model. Loss: $0.91 \rightarrow 0.09$.
+
+\textbf{4.\ Three custom GRPO reward functions.}
+Format compliance ($R_\text{format}$), gameplay outcome simulation ($R_\text{game}$), and strategic quality ($R_\text{strat}$). GRPO ultimately degraded performance---SFT already near-optimal with $>$95\% correct actions, leaving insufficient reward variance for 4 generations/prompt.
+
+\textbf{5.\ Critical finding: prompt alignment.}
+The system prompt at inference must \emph{exactly} match training. Mismatch causes up to 7.4$\times$ degradation (+37.1 $\rightarrow$ +4.7).
+
+\section*{Results}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Board Size} & \textbf{Games} & \textbf{Avg Score} & \textbf{Valid JSON} & \textbf{Valid Moves} \\
+\midrule
+$6\times6$ & 15 & $-1.9$ & 100\% & 100\% \\
+$8\times8$ & 15 & $+29.0$ & 100\% & 100\% \\
+$10\times10$ & 15 & $+43.3$ & 100\% & 100\% \\
+$16\times16$ & 8 & $+55.0$ & 100\% & 100\% \\
+$20\times20$ & 8 & $+49.4$ & 100\% & 100\% \\
+$50\times50$ & 2 & $+55.0$ & 100\% & 100\% \\
+Rectangular (6 sizes) & 28 & $+25.7$ & 100\% & 100\% \\
+\midrule
+\textbf{Core (5 sizes)} & \textbf{61} & \textbf{+37.1} & \textbf{100\%} & \textbf{100\%} \\
+\textbf{All 12 sizes} & \textbf{96} & \textbf{+29.1} & \textbf{100\%} & \textbf{100\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{-4pt}
+
+\textbf{Key metrics:} 100\% valid JSON, 100\% valid moves, $\sim$20 tokens/response (well under 128 limit), greedy decoding, no post-LLM processing. Final model: SFT-only, 28GB merged weights.
+
+\end{document}

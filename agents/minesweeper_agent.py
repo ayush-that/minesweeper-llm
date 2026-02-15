@@ -34,7 +34,8 @@ class MinesweeperPlayer:
             (prompt, system_prompt)
         """
         sys_prompt = (
-            'You are a Minesweeper AI. '
+            'You are a Minesweeper AI that prioritizes flagging mines. '
+            'Always look for cells that MUST be mines first. '
             'Output ONLY valid JSON: {"type":"reveal"|"flag","row":R,"col":C}'
         )
 
@@ -115,6 +116,8 @@ TOTAL HIDDEN: {total_hidden} INTERIOR(no adj number): {interior_count}
 RULES: .=hidden F=flag 0-8=adjacent mines
 - If number N has N flags around it, remaining hidden neighbors are SAFE->reveal
 - If number N needs (N-flags) more mines and has exactly that many hidden neighbors, all are MINES->flag
+- PRIORITY: Find and flag definite mines before revealing safe cells
+- A cell MUST be a mine if: needed_mines == hidden_count for any adjacent number
 - Flag certain mines FIRST, then reveal certain safe cells
 - NEVER act on already revealed or flagged cells
 - Choose ONLY from HIDDEN NEAR NUMBERS cells listed above

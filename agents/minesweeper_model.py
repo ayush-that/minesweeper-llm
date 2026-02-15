@@ -31,7 +31,8 @@ class MinesweeperAgent(object):
         """
         if system_prompt is None:
             system_prompt = (
-                'You are a Minesweeper AI. '
+                'You are a Minesweeper AI that prioritizes flagging mines. '
+                'Always look for cells that MUST be mines first. '
                 'Output ONLY valid JSON: {"type":"reveal"|"flag","row":R,"col":C}'
             )
 

@@ -121,12 +121,12 @@ def build_frontier_prompt(board, rows, cols, mines, flags):
 
 print("Loading model...")
 model = AutoModelForCausalLM.from_pretrained(
-    "/workspace/your_finetuned_model",
+    "/workspace/your_finetuned_model_v2",
     torch_dtype=torch.bfloat16,
     device_map="auto"
 )
-tokenizer = AutoTokenizer.from_pretrained("/workspace/your_finetuned_model")
-sys_prompt = "You are an expert Minesweeper AI. Analyze constraints and output ONLY a valid JSON action. No explanation."
+tokenizer = AutoTokenizer.from_pretrained("/workspace/your_finetuned_model_v2")
+sys_prompt = 'You are a Minesweeper AI. Output ONLY valid JSON: {"type":"reveal"|"flag","row":R,"col":C}'
 
 board_configs = [
     (6, 6, 5, 20),
@@ -135,6 +135,7 @@ board_configs = [
     (16, 16, 40, 10),
     (20, 20, 60, 10),
     (30, 30, 120, 5),
+    (50, 50, 350, 3),
 ]
 
 print("\n=== FINAL EVALUATION (Frontier format for ALL boards) ===\n")
@@ -184,7 +185,7 @@ for rows, cols, mines, n_games in board_configs:
             inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
             with torch.no_grad():
-                output = model.generate(**inputs, max_new_tokens=64, do_sample=False, pad_token_id=tokenizer.pad_token_id)
+                output = model.generate(**inputs, max_new_tokens=128, do_sample=False, pad_token_id=tokenizer.pad_token_id)
             response = tokenizer.decode(output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
 
             action = parse_llm_action(response)

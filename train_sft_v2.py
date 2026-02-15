@@ -9,10 +9,12 @@ Key fixes:
 """
 
 import os
+
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface"
 
 from unsloth import FastLanguageModel
+from trl import SFTConfig, SFTTrainer
 import torch
 import json
 from collections import defaultdict
@@ -47,8 +49,13 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=lora_rank,
     target_modules=[
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
     ],
     lora_alpha=lora_rank * 2,
     use_gradient_checkpointing="unsloth",
@@ -57,7 +64,9 @@ model = FastLanguageModel.get_peft_model(
 
 trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total = sum(p.numel() for p in model.parameters())
-print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100:.2f}%)")
+print(
+    f"Trainable: {trainable / 1e6:.1f}M / {total / 1e9:.1f}B ({trainable / total * 100:.2f}%)"
+)
 
 # ================================================================
 # Step 3: Load Training Data (NO 50x50 filter!)
@@ -66,7 +75,7 @@ print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100
 data_file = "minesweeper_v2_data.jsonl"
 
 raw_data = []
-with open(data_file, 'r') as f:
+with open(data_file, "r") as f:
     for line in f:
         ex = json.loads(line.strip())
         raw_data.append(ex)
@@ -78,22 +87,26 @@ size_counts = defaultdict(int)
 stage_counts = defaultdict(int)
 deducible_count = 0
 for e in raw_data:
-    size_counts[e['board_size']] += 1
-    stage_counts[e['game_stage']] += 1
-    if e['is_deducible']:
+    size_counts[e["board_size"]] += 1
+    stage_counts[e["game_stage"]] += 1
+    if e["is_deducible"]:
         deducible_count += 1
 
-print(f"\nBoard size distribution:")
-for size in sorted(size_counts.keys(), key=lambda x: (int(x.split('x')[0]), int(x.split('x')[1]))):
+print("\nBoard size distribution:")
+for size in sorted(
+    size_counts.keys(), key=lambda x: (int(x.split("x")[0]), int(x.split("x")[1]))
+):
     cnt = size_counts[size]
-    print(f"  {size}: {cnt} ({cnt/len(raw_data)*100:.1f}%)")
+    print(f"  {size}: {cnt} ({cnt / len(raw_data) * 100:.1f}%)")
 
-print(f"\nStage distribution:")
-for stage in ['opening', 'early', 'mid', 'late', 'endgame', 'near_failure']:
+print("\nStage distribution:")
+for stage in ["opening", "early", "mid", "late", "endgame", "near_failure"]:
     cnt = stage_counts.get(stage, 0)
-    print(f"  {stage}: {cnt} ({cnt/len(raw_data)*100:.1f}%)")
+    print(f"  {stage}: {cnt} ({cnt / len(raw_data) * 100:.1f}%)")
 
-print(f"\nDeducible: {deducible_count}/{len(raw_data)} ({deducible_count/len(raw_data)*100:.1f}%)")
+print(
+    f"\nDeducible: {deducible_count}/{len(raw_data)} ({deducible_count / len(raw_data) * 100:.1f}%)"
+)
 
 # ================================================================
 # Step 4: Prepare SFT Dataset
@@ -101,7 +114,7 @@ print(f"\nDeducible: {deducible_count}/{len(raw_data)} ({deducible_count/len(raw
 
 sft_items = []
 for ex in raw_data:
-    messages = json.loads(ex['messages'])
+    messages = json.loads(ex["messages"])
     sft_items.append({"messages": messages})
 
 sft_dataset = Dataset.from_list(sft_items)
@@ -120,7 +133,9 @@ print(f"User (first 200): {msgs[1]['content'][:200]}")
 print(f"Assistant: {msgs[2]['content']}")
 
 # Check token lengths
-test_text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
+test_text = tokenizer.apply_chat_template(
+    msgs, tokenize=False, add_generation_prompt=False
+)
 test_tokens = tokenizer(test_text, return_tensors="pt")
 print(f"Example token length: {test_tokens.input_ids.shape[1]}")
 
@@ -128,22 +143,32 @@ print(f"Example token length: {test_tokens.input_ids.shape[1]}")
 # Step 5: SFT Training
 # ================================================================
 
-from trl import SFTConfig, SFTTrainer
 
 def formatting_func(examples):
     """Apply chat template to convert messages to training text."""
     messages = examples["messages"]
-    if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    if (
+        isinstance(messages, list)
+        and len(messages) > 0
+        and isinstance(messages[0], dict)
+    ):
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
         return [text]
     else:
-        return [tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-                for msgs in messages]
+        return [
+            tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+            for msgs in messages
+        ]
+
 
 sft_config = SFTConfig(
     output_dir="sft_v2_checkpoint",
     per_device_train_batch_size=2,
-    gradient_accumulation_steps=8,    # Effective batch = 16
+    gradient_accumulation_steps=8,  # Effective batch = 16
     learning_rate=2e-5,
     lr_scheduler_type="cosine",
     num_train_epochs=1,
@@ -167,11 +192,15 @@ sft_trainer = SFTTrainer(
     formatting_func=formatting_func,
 )
 
-effective_batch = sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+effective_batch = (
+    sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+)
 est_steps = len(sft_dataset) // effective_batch
-print(f"\nSFT config:")
+print("\nSFT config:")
 print(f"  Epochs: {sft_config.num_train_epochs}")
-print(f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}")
+print(
+    f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}"
+)
 print(f"  LR: {sft_config.learning_rate}")
 print(f"  Max seq length: {sft_config.max_seq_length}")
 print(f"  Estimated steps: ~{est_steps}")

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Merge GRPO LoRA adapter into base model and save."""
+
 import os
+
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
@@ -37,4 +39,6 @@ total_size = sum(
     for f in os.listdir(output_path)
     if os.path.isfile(os.path.join(output_path, f))
 )
-print(f"Done! Files: {len(os.listdir(output_path))}, Total: {total_size / 1024**3:.1f} GB")
+print(
+    f"Done! Files: {len(os.listdir(output_path))}, Total: {total_size / 1024**3:.1f} GB"
+)

@@ -66,7 +66,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--game_state_file", type=str, default=None,
+        "--game_state_file",
+        type=str,
+        default=None,
         help="Path to a game state JSON file. If not provided, uses a built-in sample.",
     )
     args = parser.parse_args()
@@ -98,8 +100,10 @@ def main():
         json.dump(game_state, f, indent=2)
     print(f"  Saved to: {state_file}")
 
-    print(f"\nBoard ({game_state['rows']}x{game_state['cols']}, "
-          f"{game_state['mines']} mines):\n")
+    print(
+        f"\nBoard ({game_state['rows']}x{game_state['cols']}, "
+        f"{game_state['mines']} mines):\n"
+    )
     print(pretty_board(game_state))
     print()
 
@@ -112,6 +116,7 @@ def main():
     config_path = Path("minesweeper_config.yaml")
     if config_path.exists():
         import yaml
+
         with open(config_path, "r") as f:
             gen_kwargs.update(yaml.safe_load(f))
     gen_kwargs["tgps_show"] = True
@@ -120,7 +125,9 @@ def main():
     print("Warming up model...", end=" ", flush=True)
     warmup_state = {
         "board": [[".", "."], ["1", "."]],
-        "rows": 2, "cols": 2, "mines": 1,
+        "rows": 2,
+        "cols": 2,
+        "mines": 1,
     }
     player.play_action(warmup_state, **gen_kwargs)
     print("done.")

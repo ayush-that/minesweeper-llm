@@ -3,8 +3,8 @@
 Minesweeper Agent
 Size-adaptive prompt builder with compact grid (<=16x16) and frontier sparse (>16x16)
 """
+
 import json
-import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -34,7 +34,7 @@ class MinesweeperPlayer:
             (prompt, system_prompt)
         """
         sys_prompt = (
-            'You are a Minesweeper AI. '
+            "You are a Minesweeper AI. "
             'Output ONLY valid JSON: {"type":"reveal"|"flag","row":R,"col":C}'
         )
 
@@ -47,21 +47,27 @@ class MinesweeperPlayer:
 
         # Count flags from board if not provided
         if flags_placed == 0:
-            flags_placed = sum(1 for r in board for c in r if c == 'F')
+            flags_placed = sum(1 for r in board for c in r if c == "F")
 
         mines_left = num_mines - flags_placed
 
         if rows <= self.FRONTIER_THRESHOLD and cols <= self.FRONTIER_THRESHOLD:
-            prompt = self._build_compact_prompt(board, rows, cols, num_mines, flags_placed, mines_left)
+            prompt = self._build_compact_prompt(
+                board, rows, cols, num_mines, flags_placed, mines_left
+            )
         else:
-            prompt = self._build_frontier_prompt(board, rows, cols, num_mines, flags_placed, mines_left)
+            prompt = self._build_frontier_prompt(
+                board, rows, cols, num_mines, flags_placed, mines_left
+            )
 
         return prompt, sys_prompt
 
-    def _build_compact_prompt(self, board, rows, cols, num_mines, flags_placed, mines_left):
+    def _build_compact_prompt(
+        self, board, rows, cols, num_mines, flags_placed, mines_left
+    ):
         """Compact grid format for boards <= 16x16."""
-        grid_lines = [''.join(row) for row in board]
-        grid_str = '\n'.join(grid_lines)
+        grid_lines = ["".join(row) for row in board]
+        grid_str = "\n".join(grid_lines)
 
         return f"""MINESWEEPER {rows}x{cols} MINES:{num_mines} FLAGS:{flags_placed} LEFT:{mines_left}
 {grid_str}
@@ -72,14 +78,16 @@ RULES: .=hidden F=flag 0-8=adjacent mines
 - NEVER act on already revealed or flagged cells
 Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
 
-    def _build_frontier_prompt(self, board, rows, cols, num_mines, flags_placed, mines_left):
+    def _build_frontier_prompt(
+        self, board, rows, cols, num_mines, flags_placed, mines_left
+    ):
         """Frontier sparse format for boards > 16x16."""
         frontier_info = []
         all_hidden_near_numbers = set()
 
         for r in range(rows):
             for c in range(cols):
-                if board[r][c] not in '012345678':
+                if board[r][c] not in "012345678":
                     continue
                 num = int(board[r][c])
                 flags = 0
@@ -90,22 +98,28 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
                             continue
                         nr, nc = r + dr, c + dc
                         if 0 <= nr < rows and 0 <= nc < cols:
-                            if board[nr][nc] == 'F':
+                            if board[nr][nc] == "F":
                                 flags += 1
-                            elif board[nr][nc] == '.':
+                            elif board[nr][nc] == ".":
                                 hidden.append((nr, nc))
                                 all_hidden_near_numbers.add((nr, nc))
 
                 if hidden:
-                    hidden_str = ''.join(f'({hr},{hc})' for hr, hc in hidden)
-                    frontier_info.append(f'R{r}C{c}={num} flags:{flags} hidden:[{hidden_str}]')
+                    hidden_str = "".join(f"({hr},{hc})" for hr, hc in hidden)
+                    frontier_info.append(
+                        f"R{r}C{c}={num} flags:{flags} hidden:[{hidden_str}]"
+                    )
 
-        total_hidden = sum(1 for r in range(rows) for c in range(cols) if board[r][c] == '.')
+        total_hidden = sum(
+            1 for r in range(rows) for c in range(cols) if board[r][c] == "."
+        )
         interior_count = total_hidden - len(all_hidden_near_numbers)
 
         # Cap frontier info to prevent token explosion
-        frontier_str = '\n'.join(frontier_info[:200])
-        hidden_near_str = ''.join(f'({r},{c})' for r, c in sorted(all_hidden_near_numbers)[:100])
+        frontier_str = "\n".join(frontier_info[:200])
+        hidden_near_str = "".join(
+            f"({r},{c})" for r, c in sorted(all_hidden_near_numbers)[:100]
+        )
 
         return f"""MINESWEEPER {rows}x{cols} MINES:{num_mines} FLAGS:{flags_placed} LEFT:{mines_left}
 FRONTIER (numbered cells with hidden neighbors):
@@ -130,7 +144,9 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
             (action_dict, token_count, generation_time)
         """
         prompt, sys_prompt = self.build_prompt(game_state)
-        response, tl, gt = self.agent.generate_response(prompt, sys_prompt, **gen_kwargs)
+        response, tl, gt = self.agent.generate_response(
+            prompt, sys_prompt, **gen_kwargs
+        )
 
         action = self.parse_action(response)
 
@@ -156,13 +172,13 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
 
         # If targeting already revealed/flagged cell, find nearest unrevealed
         cell_val = board[row][col]
-        if cell_val != '.':
+        if cell_val != ".":
             # Find nearest unrevealed cell
-            best_dist = float('inf')
+            best_dist = float("inf")
             best_cell = None
             for r in range(rows):
                 for c in range(cols):
-                    if board[r][c] == '.':
+                    if board[r][c] == ".":
                         dist = abs(r - row) + abs(c - col)
                         if dist < best_dist:
                             best_dist = dist
@@ -173,7 +189,7 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
 
         # Prevent over-flagging
         if action["type"] == "flag":
-            flags_count = sum(1 for r in board for c in r if c == 'F')
+            flags_count = sum(1 for r in board for c in r if c == "F")
             if flags_count >= num_mines:
                 action["type"] = "reveal"
 
@@ -195,16 +211,16 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
                 brace_count = 0
                 end = start
                 while end < len(response):
-                    if response[end] == '{':
+                    if response[end] == "{":
                         brace_count += 1
-                    elif response[end] == '}':
+                    elif response[end] == "}":
                         brace_count -= 1
                         if brace_count == 0:
-                            json_str = response[start:end+1]
+                            json_str = response[start : end + 1]
                             try:
                                 obj = json.loads(json_str)
                                 potential_jsons.append(obj)
-                            except:
+                            except (json.JSONDecodeError, ValueError):
                                 pass
                             break
                     end += 1
@@ -212,11 +228,13 @@ Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
                 i = end + 1 if end < len(response) else len(response)
 
             for obj in potential_jsons:
-                if (isinstance(obj, dict) and
-                    "type" in obj and
-                    "row" in obj and
-                    "col" in obj and
-                    obj["type"] in ["reveal", "flag"]):
+                if (
+                    isinstance(obj, dict)
+                    and "type" in obj
+                    and "row" in obj
+                    and "col" in obj
+                    and obj["type"] in ["reveal", "flag"]
+                ):
                     obj["row"] = int(obj["row"])
                     obj["col"] = int(obj["col"])
                     return obj
@@ -276,12 +294,12 @@ if __name__ == "__main__":
     action, tl, gt = player.play_action(game_state, **gen_kwargs)
 
     if args.verbose:
-        print(f"Game State:")
+        print("Game State:")
         print(json.dumps(game_state, indent=2))
-        print(f"\nGenerated Action:")
+        print("\nGenerated Action:")
         print(json.dumps(action, indent=2))
         if tl and gt:
-            print(f"\nStats: Tokens={tl}, Time={gt:.2f}s, TGPS={tl/gt:.2f}")
+            print(f"\nStats: Tokens={tl}, Time={gt:.2f}s, TGPS={tl / gt:.2f}")
 
     if action:
         player.save_action(action, args.output_file)

@@ -8,10 +8,12 @@ Continued SFT on existing finetuned model with corrected data:
 """
 
 import os
+
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface"
 
 from unsloth import FastLanguageModel
+from trl import SFTConfig, SFTTrainer
 import torch
 import json
 import random
@@ -48,8 +50,13 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=lora_rank,
     target_modules=[
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
     ],
     lora_alpha=lora_rank * 2,
     use_gradient_checkpointing="unsloth",
@@ -58,7 +65,9 @@ model = FastLanguageModel.get_peft_model(
 
 trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total = sum(p.numel() for p in model.parameters())
-print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100:.2f}%)")
+print(
+    f"Trainable: {trainable / 1e6:.1f}M / {total / 1e9:.1f}B ({trainable / total * 100:.2f}%)"
+)
 
 # ================================================================
 # Step 3: Create focused dataset from full v2 data
@@ -67,7 +76,7 @@ print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100
 data_file = "minesweeper_v2_data.jsonl"
 
 all_data = []
-with open(data_file, 'r') as f:
+with open(data_file, "r") as f:
     for line in f:
         ex = json.loads(line.strip())
         all_data.append(ex)
@@ -77,7 +86,7 @@ print(f"Full dataset: {len(all_data)} examples")
 # Group by board size
 by_size = defaultdict(list)
 for ex in all_data:
-    by_size[ex['board_size']].append(ex)
+    by_size[ex["board_size"]].append(ex)
 
 print(f"Board sizes: {sorted(by_size.keys())}")
 
@@ -88,19 +97,19 @@ rng = random.Random(42)
 focused = []
 
 target_per_size = {
-    '6x6': 500,      # Critical: was trained on compact, now frontier
-    '8x8': 500,      # Critical: was trained on compact, now frontier
-    '8x12': 300,     # NEW: rectangular
-    '10x10': 400,    # Critical: was trained on compact
-    '10x16': 300,    # NEW: rectangular
-    '12x20': 300,    # NEW: rectangular
-    '16x16': 400,    # Critical: was trained on compact
-    '16x30': 300,    # NEW: rectangular
-    '20x20': 400,    # Reinforce with new prompt
-    '20x40': 300,    # NEW: rectangular
-    '30x30': 400,    # Reinforce with new prompt
-    '30x50': 300,    # NEW: rectangular
-    '50x50': 600,    # NEW: was filtered out before
+    "6x6": 500,  # Critical: was trained on compact, now frontier
+    "8x8": 500,  # Critical: was trained on compact, now frontier
+    "8x12": 300,  # NEW: rectangular
+    "10x10": 400,  # Critical: was trained on compact
+    "10x16": 300,  # NEW: rectangular
+    "12x20": 300,  # NEW: rectangular
+    "16x16": 400,  # Critical: was trained on compact
+    "16x30": 300,  # NEW: rectangular
+    "20x20": 400,  # Reinforce with new prompt
+    "20x40": 300,  # NEW: rectangular
+    "30x30": 400,  # Reinforce with new prompt
+    "30x50": 300,  # NEW: rectangular
+    "50x50": 600,  # NEW: was filtered out before
 }
 
 for size, target in target_per_size.items():
@@ -120,11 +129,13 @@ print(f"\nFocused dataset: {len(focused)} examples")
 size_counts = defaultdict(int)
 deducible_count = 0
 for e in focused:
-    size_counts[e['board_size']] += 1
-    if e['is_deducible']:
+    size_counts[e["board_size"]] += 1
+    if e["is_deducible"]:
         deducible_count += 1
 
-print(f"Deducible: {deducible_count}/{len(focused)} ({deducible_count/len(focused)*100:.1f}%)")
+print(
+    f"Deducible: {deducible_count}/{len(focused)} ({deducible_count / len(focused) * 100:.1f}%)"
+)
 
 # ================================================================
 # Step 4: Prepare SFT Dataset
@@ -132,7 +143,7 @@ print(f"Deducible: {deducible_count}/{len(focused)} ({deducible_count/len(focuse
 
 sft_items = []
 for ex in focused:
-    messages = json.loads(ex['messages'])
+    messages = json.loads(ex["messages"])
     sft_items.append({"messages": messages})
 
 sft_dataset = Dataset.from_list(sft_items)
@@ -147,22 +158,32 @@ print(f"Assistant: {msgs[2]['content']}")
 # Step 5: SFT Training (continued, lower LR)
 # ================================================================
 
-from trl import SFTConfig, SFTTrainer
 
 def formatting_func(examples):
     messages = examples["messages"]
-    if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    if (
+        isinstance(messages, list)
+        and len(messages) > 0
+        and isinstance(messages[0], dict)
+    ):
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
         return [text]
     else:
-        return [tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-                for msgs in messages]
+        return [
+            tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+            for msgs in messages
+        ]
+
 
 sft_config = SFTConfig(
     output_dir="sft_continued_checkpoint",
     per_device_train_batch_size=2,
-    gradient_accumulation_steps=8,    # Effective batch = 16
-    learning_rate=5e-6,               # Lower LR for continued SFT
+    gradient_accumulation_steps=8,  # Effective batch = 16
+    learning_rate=5e-6,  # Lower LR for continued SFT
     lr_scheduler_type="cosine",
     num_train_epochs=1,
     optim="adamw_8bit",
@@ -185,12 +206,16 @@ sft_trainer = SFTTrainer(
     formatting_func=formatting_func,
 )
 
-effective_batch = sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+effective_batch = (
+    sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+)
 est_steps = len(sft_dataset) // effective_batch
-print(f"\nContinued SFT config:")
-print(f"  Starting from: finetuned model (already knows Minesweeper)")
+print("\nContinued SFT config:")
+print("  Starting from: finetuned model (already knows Minesweeper)")
 print(f"  Epochs: {sft_config.num_train_epochs}")
-print(f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}")
+print(
+    f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}"
+)
 print(f"  LR: {sft_config.learning_rate} (lower for continued SFT)")
 print(f"  Estimated steps: ~{est_steps}")
 

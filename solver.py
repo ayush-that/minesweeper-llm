@@ -11,12 +11,10 @@ Used for:
 - Cell probability computation
 """
 
-import json
 import time
 from typing import List, Tuple, Set, Dict, Optional, FrozenSet
 from collections import defaultdict
-from math import comb, log, exp, lgamma
-from itertools import combinations
+from math import exp, lgamma
 
 
 def get_neighbors(r: int, c: int, rows: int, cols: int) -> List[Tuple[int, int]]:
@@ -34,7 +32,8 @@ def get_neighbors(r: int, c: int, rows: int, cols: int) -> List[Tuple[int, int]]
 
 class Constraint:
     """Represents: sum of mine indicators for `cells` == `count`"""
-    __slots__ = ['cells', 'count']
+
+    __slots__ = ["cells", "count"]
 
     def __init__(self, cells: FrozenSet[Tuple[int, int]], count: int):
         self.cells = cells
@@ -53,8 +52,14 @@ class Constraint:
 class MinesweeperSolver:
     """3-tier Minesweeper solver with probability computation."""
 
-    def __init__(self, board: List[List[str]], rows: int, cols: int,
-                 total_mines: int, timeout: float = 1.0):
+    def __init__(
+        self,
+        board: List[List[str]],
+        rows: int,
+        cols: int,
+        total_mines: int,
+        timeout: float = 1.0,
+    ):
         """
         Args:
             board: 2D list of cell values ('.' unrevealed, 'F' flagged, '0'-'8' numbers, '*' mine)
@@ -77,14 +82,14 @@ class MinesweeperSolver:
         for r in range(rows):
             for c in range(cols):
                 val = board[r][c]
-                if val == '.':
+                if val == ".":
                     self.unrevealed.add((r, c))
-                elif val == 'F':
+                elif val == "F":
                     self.flagged.add((r, c))
-                elif val in '012345678':
+                elif val in "012345678":
                     self.revealed.add((r, c))
                     self.numbers[(r, c)] = int(val)
-                elif val == '*':
+                elif val == "*":
                     self.revealed.add((r, c))
 
         self.remaining_mines = total_mines - len(self.flagged)
@@ -122,7 +127,10 @@ class MinesweeperSolver:
                 for nr, nc in neighbors:
                     if (nr, nc) in self.flagged or (nr, nc) in self.mine_cells:
                         adj_flags += 1
-                    elif (nr, nc) in self.unrevealed and (nr, nc) not in self.safe_cells:
+                    elif (nr, nc) in self.unrevealed and (
+                        nr,
+                        nc,
+                    ) not in self.safe_cells:
                         adj_unrevealed.append((nr, nc))
 
                 remaining = num - adj_flags
@@ -192,7 +200,10 @@ class MinesweeperSolver:
 
                         if diff_count >= 0 and diff_count <= len(diff_cells):
                             new_c = Constraint(diff_cells, diff_count)
-                            if new_c not in constraints and new_c not in new_constraints:
+                            if (
+                                new_c not in constraints
+                                and new_c not in new_constraints
+                            ):
                                 new_constraints.append(new_c)
 
             # Apply deductions from all constraints (original + new)
@@ -220,15 +231,19 @@ class MinesweeperSolver:
     def _get_frontier(self) -> Set[Tuple[int, int]]:
         """Get frontier cells: unrevealed cells adjacent to revealed numbers."""
         frontier = set()
-        for (r, c) in self.numbers:
+        for r, c in self.numbers:
             for nr, nc in get_neighbors(r, c, self.rows, self.cols):
-                if ((nr, nc) in self.unrevealed and
-                    (nr, nc) not in self.safe_cells and
-                    (nr, nc) not in self.mine_cells):
+                if (
+                    (nr, nc) in self.unrevealed
+                    and (nr, nc) not in self.safe_cells
+                    and (nr, nc) not in self.mine_cells
+                ):
                     frontier.add((nr, nc))
         return frontier
 
-    def _get_connected_components(self, frontier: Set[Tuple[int, int]]) -> List[Set[Tuple[int, int]]]:
+    def _get_connected_components(
+        self, frontier: Set[Tuple[int, int]]
+    ) -> List[Set[Tuple[int, int]]]:
         """Partition frontier into connected components.
         Two frontier cells are connected if they share a constraining number."""
         if not frontier:
@@ -275,8 +290,9 @@ class MinesweeperSolver:
 
         return list(components.values())
 
-    def _enumerate_component(self, component: Set[Tuple[int, int]],
-                              constraints: List[Constraint]) -> Optional[Dict[int, List[Dict[Tuple[int, int], bool]]]]:
+    def _enumerate_component(
+        self, component: Set[Tuple[int, int]], constraints: List[Constraint]
+    ) -> Optional[Dict[int, List[Dict[Tuple[int, int], bool]]]]:
         """Enumerate all valid mine configurations for a connected component.
 
         Returns: {mine_count: [list of assignments]} where assignment is {cell: is_mine}
@@ -331,7 +347,6 @@ class MinesweeperSolver:
 
                 mines_so_far = sum(1 for i in indices if assignment[i] is True)
                 unknown = sum(1 for i in indices if assignment[i] is None)
-                safes_so_far = sum(1 for i in indices if assignment[i] is False)
 
                 # Too many mines already
                 if mines_so_far > count:
@@ -388,7 +403,9 @@ class MinesweeperSolver:
         if not frontier:
             # No frontier — either game is won or we need a random guess
             # Compute interior probabilities (all unrevealed are interior)
-            interior = self.unrevealed - self.safe_cells - self.mine_cells - self.flagged
+            interior = (
+                self.unrevealed - self.safe_cells - self.mine_cells - self.flagged
+            )
             if interior and self.remaining_mines > 0:
                 p = self.remaining_mines / len(interior)
                 p = max(0.0, min(1.0, p))
@@ -429,12 +446,13 @@ class MinesweeperSolver:
         resolved = self.safe_cells | self.mine_cells | self.flagged
         interior = self.unrevealed - frontier - resolved
         Y = len(interior)  # Interior cell count
-        M = self.remaining_mines - len(self.mine_cells & self.unrevealed)  # Remaining after known mines
+        M = self.remaining_mines - len(
+            self.mine_cells & self.unrevealed
+        )  # Remaining after known mines
 
         # For failed components, we can't compute exact probabilities
         # Count mines that MUST be in failed components (from Tier 1+2)
-        failed_mines = sum(1 for comp in failed_components
-                          for cell in comp if cell in self.mine_cells)
+        # Count of mines in failed components not needed for current logic
 
         if not component_results:
             # No successful components
@@ -480,11 +498,15 @@ class MinesweeperSolver:
 
         # Interior cell probability
         if interior:
-            frontier_expected_mines = sum(self.cell_probabilities.get(c, 0.5)
-                                         for c in frontier
-                                         if c not in self.mine_cells and c not in self.safe_cells)
+            frontier_expected_mines = sum(
+                self.cell_probabilities.get(c, 0.5)
+                for c in frontier
+                if c not in self.mine_cells and c not in self.safe_cells
+            )
             frontier_known_mines = len(self.mine_cells & frontier)
-            remaining_for_interior = max(0, M - frontier_expected_mines - frontier_known_mines)
+            remaining_for_interior = max(
+                0, M - frontier_expected_mines - frontier_known_mines
+            )
 
             if Y > 0:
                 p_interior = remaining_for_interior / Y
@@ -496,7 +518,7 @@ class MinesweeperSolver:
     def _log_comb(n, k):
         """Log of C(n, k) using lgamma to avoid overflow."""
         if k < 0 or k > n:
-            return float('-inf')
+            return float("-inf")
         if k == 0 or k == n:
             return 0.0
         return lgamma(n + 1) - lgamma(k + 1) - lgamma(n - k + 1)
@@ -512,8 +534,12 @@ class MinesweeperSolver:
             if remaining < 0 or remaining > Y:
                 continue
 
-            log_w = self._log_comb(Y, remaining) if Y > 0 else (0.0 if remaining == 0 else float('-inf'))
-            if log_w == float('-inf'):
+            log_w = (
+                self._log_comb(Y, remaining)
+                if Y > 0
+                else (0.0 if remaining == 0 else float("-inf"))
+            )
+            if log_w == float("-inf"):
                 continue
 
             for config in configs:
@@ -544,7 +570,13 @@ class MinesweeperSolver:
                     self.mine_cells.add(cell)
 
             # Interior probability
-            interior = self.unrevealed - self._get_frontier() - self.safe_cells - self.mine_cells - self.flagged
+            interior = (
+                self.unrevealed
+                - self._get_frontier()
+                - self.safe_cells
+                - self.mine_cells
+                - self.flagged
+            )
             if interior and Y > 0:
                 # Weighted average of (M - m) / Y
                 expected_interior = 0.0
@@ -553,7 +585,7 @@ class MinesweeperSolver:
                     if remaining < 0 or remaining > Y:
                         continue
                     log_w = self._log_comb(Y, remaining)
-                    if log_w == float('-inf'):
+                    if log_w == float("-inf"):
                         continue
                     w = exp(log_w - max_log_w) * len(configs)
                     expected_interior += w * remaining / Y
@@ -609,8 +641,13 @@ class MinesweeperSolver:
         probs = self.get_cell_probabilities()
         if probs:
             # Only consider unrevealed, unflagged cells
-            candidates = {cell: p for cell, p in probs.items()
-                         if cell in self.unrevealed and cell not in self.safe_cells and cell not in self.mine_cells}
+            candidates = {
+                cell: p
+                for cell, p in probs.items()
+                if cell in self.unrevealed
+                and cell not in self.safe_cells
+                and cell not in self.mine_cells
+            }
             if candidates:
                 best_cell = min(candidates, key=candidates.get)
                 return "reveal", best_cell[0], best_cell[1], False
@@ -633,8 +670,14 @@ class MinesweeperSolver:
         return False
 
 
-def solve_board(board: List[List[str]], rows: int, cols: int,
-                total_mines: int, full: bool = True, timeout: float = 1.0) -> MinesweeperSolver:
+def solve_board(
+    board: List[List[str]],
+    rows: int,
+    cols: int,
+    total_mines: int,
+    full: bool = True,
+    timeout: float = 1.0,
+) -> MinesweeperSolver:
     """Convenience function: create solver, run it, return it.
 
     Args:

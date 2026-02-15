@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Quick E2E test: load model via agent code path, generate a single action."""
+
 import os
+
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
 import sys
+
 sys.path.insert(0, "/workspace")
 
 import json
+from agents.minesweeper_agent import MinesweeperPlayer
 
 # Test game state (10x10 board, mid-game)
 game_state = {
@@ -31,8 +35,6 @@ game_state = {
     "_sequence": 0,
 }
 
-from agents.minesweeper_agent import MinesweeperPlayer
-
 print("Initializing player...")
 player = MinesweeperPlayer()
 print("Player initialized!")
@@ -53,7 +55,9 @@ if action:
     r, c = action["row"], action["col"]
     if 0 <= r < 10 and 0 <= c < 10:
         cell = board[r][c]
-        print(f"Target cell [{r},{c}] = '{cell}' ({'hidden/valid' if cell == '.' else 'INVALID - already revealed/flagged'})")
+        print(
+            f"Target cell [{r},{c}] = '{cell}' ({'hidden/valid' if cell == '.' else 'INVALID - already revealed/flagged'})"
+        )
     else:
         print(f"INVALID: out of bounds [{r},{c}]")
 else:

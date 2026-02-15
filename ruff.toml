@@ -1,0 +1,6 @@
+# Ruff configuration for IITD_Feb26_RL_MINESWEEPER
+target-version = "py39"
+
+[lint]
+# E402 = module level import not at top - intentional for notebooks and conditional imports
+ignore = ["E402"]

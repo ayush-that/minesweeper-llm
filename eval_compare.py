@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Compare SFT vs GRPO models with different FRONTIER_THRESHOLDs."""
+
 import os
+
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
@@ -30,7 +32,11 @@ class MinesweeperGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = r + dr, c + dc
-                        if 0 <= nr < rows and 0 <= nc < cols and self._board[nr][nc] == -1:
+                        if (
+                            0 <= nr < rows
+                            and 0 <= nc < cols
+                            and self._board[nr][nc] == -1
+                        ):
                             count += 1
                 self._board[r][c] = count
         self.revealed = set()
@@ -53,9 +59,12 @@ class MinesweeperGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = cr + dr, cc + dc
-                        if (0 <= nr < self.rows and 0 <= nc < self.cols
-                                and (nr, nc) not in self.revealed
-                                and (nr, nc) not in self.flagged):
+                        if (
+                            0 <= nr < self.rows
+                            and 0 <= nc < self.cols
+                            and (nr, nc) not in self.revealed
+                            and (nr, nc) not in self.flagged
+                        ):
                             stack.append((nr, nc))
         safe_total = self.rows * self.cols - self.num_mines
         if len(self.revealed) >= safe_total:
@@ -67,11 +76,11 @@ class MinesweeperGame:
         self.flagged.add((r, c))
 
     def get_board(self):
-        board = [['.' for _ in range(self.cols)] for _ in range(self.rows)]
+        board = [["." for _ in range(self.cols)] for _ in range(self.rows)]
         for r, c in self.revealed:
             board[r][c] = str(self._board[r][c])
         for r, c in self.flagged:
-            board[r][c] = 'F'
+            board[r][c] = "F"
         return board
 
     @property
@@ -81,11 +90,15 @@ class MinesweeperGame:
 
 def parse_llm_action(response):
     best = None
-    for match in re.finditer(r'\{[^{}]*\}', response):
+    for match in re.finditer(r"\{[^{}]*\}", response):
         try:
             action = json.loads(match.group())
-            if ("type" in action and "row" in action and "col" in action
-                    and action["type"] in ["reveal", "flag"]):
+            if (
+                "type" in action
+                and "row" in action
+                and "col" in action
+                and action["type"] in ["reveal", "flag"]
+            ):
                 action["row"] = int(action["row"])
                 action["col"] = int(action["col"])
                 best = action
@@ -97,33 +110,53 @@ def parse_llm_action(response):
 def build_prompt(board, rows, cols, mines, flags, frontier_threshold):
     mines_left = mines - flags
     if rows <= frontier_threshold and cols <= frontier_threshold:
-        grid = '\n'.join(''.join(r) for r in board)
-        return f"MINESWEEPER {rows}x{cols} MINES:{mines} FLAGS:{flags} LEFT:{mines_left}\n{grid}\nRULES: .=hidden F=flag 0-8=adjacent mines\n- If number N has N flags around it, remaining hidden neighbors are SAFE->reveal\n- If number N needs (N-flags) more mines and has exactly that many hidden neighbors, all are MINES->flag\n- Flag certain mines FIRST, then reveal certain safe cells\n- NEVER act on already revealed or flagged cells\nOutput ONLY: {{\"type\":\"reveal\"|\"flag\",\"row\":R,\"col\":C}}"
+        grid = "\n".join("".join(r) for r in board)
+        return f'MINESWEEPER {rows}x{cols} MINES:{mines} FLAGS:{flags} LEFT:{mines_left}\n{grid}\nRULES: .=hidden F=flag 0-8=adjacent mines\n- If number N has N flags around it, remaining hidden neighbors are SAFE->reveal\n- If number N needs (N-flags) more mines and has exactly that many hidden neighbors, all are MINES->flag\n- Flag certain mines FIRST, then reveal certain safe cells\n- NEVER act on already revealed or flagged cells\nOutput ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}'
     else:
         frontier_info = []
         all_hidden_near_numbers = set()
         for r in range(rows):
             for c in range(cols):
-                if board[r][c] not in '012345678':
+                if board[r][c] not in "012345678":
                     continue
                 num = int(board[r][c])
-                fl = sum(1 for dr in [-1,0,1] for dc in [-1,0,1]
-                        if not (dr==0 and dc==0) and 0<=r+dr<rows and 0<=c+dc<cols and board[r+dr][c+dc]=='F')
-                hidden = [(r+dr,c+dc) for dr in [-1,0,1] for dc in [-1,0,1]
-                         if not (dr==0 and dc==0) and 0<=r+dr<rows and 0<=c+dc<cols and board[r+dr][c+dc]=='.']
+                fl = sum(
+                    1
+                    for dr in [-1, 0, 1]
+                    for dc in [-1, 0, 1]
+                    if not (dr == 0 and dc == 0)
+                    and 0 <= r + dr < rows
+                    and 0 <= c + dc < cols
+                    and board[r + dr][c + dc] == "F"
+                )
+                hidden = [
+                    (r + dr, c + dc)
+                    for dr in [-1, 0, 1]
+                    for dc in [-1, 0, 1]
+                    if not (dr == 0 and dc == 0)
+                    and 0 <= r + dr < rows
+                    and 0 <= c + dc < cols
+                    and board[r + dr][c + dc] == "."
+                ]
                 if hidden:
                     for h in hidden:
                         all_hidden_near_numbers.add(h)
-                    hs = ''.join(f'({hr},{hc})' for hr,hc in hidden)
-                    frontier_info.append(f'R{r}C{c}={num} flags:{fl} hidden:[{hs}]')
-        total_hidden = sum(1 for r in range(rows) for c in range(cols) if board[r][c] == '.')
+                    hs = "".join(f"({hr},{hc})" for hr, hc in hidden)
+                    frontier_info.append(f"R{r}C{c}={num} flags:{fl} hidden:[{hs}]")
+        total_hidden = sum(
+            1 for r in range(rows) for c in range(cols) if board[r][c] == "."
+        )
         interior_count = total_hidden - len(all_hidden_near_numbers)
-        frontier_str = '\n'.join(frontier_info[:200])
-        hidden_near_str = ''.join(f'({r},{c})' for r,c in sorted(all_hidden_near_numbers)[:100])
-        return f"MINESWEEPER {rows}x{cols} MINES:{mines} FLAGS:{flags} LEFT:{mines_left}\nFRONTIER (numbered cells with hidden neighbors):\n{frontier_str}\nHIDDEN NEAR NUMBERS: {hidden_near_str}\nTOTAL HIDDEN: {total_hidden} INTERIOR(no adj number): {interior_count}\nRULES: .=hidden F=flag 0-8=adjacent mines\n- If number N has N flags around it, remaining hidden neighbors are SAFE->reveal\n- If number N needs (N-flags) more mines and has exactly that many hidden neighbors, all are MINES->flag\n- Flag certain mines FIRST, then reveal certain safe cells\n- NEVER act on already revealed or flagged cells\nOutput ONLY: {{\"type\":\"reveal\"|\"flag\",\"row\":R,\"col\":C}}"
+        frontier_str = "\n".join(frontier_info[:200])
+        hidden_near_str = "".join(
+            f"({r},{c})" for r, c in sorted(all_hidden_near_numbers)[:100]
+        )
+        return f'MINESWEEPER {rows}x{cols} MINES:{mines} FLAGS:{flags} LEFT:{mines_left}\nFRONTIER (numbered cells with hidden neighbors):\n{frontier_str}\nHIDDEN NEAR NUMBERS: {hidden_near_str}\nTOTAL HIDDEN: {total_hidden} INTERIOR(no adj number): {interior_count}\nRULES: .=hidden F=flag 0-8=adjacent mines\n- If number N has N flags around it, remaining hidden neighbors are SAFE->reveal\n- If number N needs (N-flags) more mines and has exactly that many hidden neighbors, all are MINES->flag\n- Flag certain mines FIRST, then reveal certain safe cells\n- NEVER act on already revealed or flagged cells\nOutput ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}'
 
 
-def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_per_game=15):
+def eval_model(
+    model, tokenizer, board_configs, frontier_threshold, max_moves_per_game=15
+):
     sys_prompt = "You are an expert Minesweeper AI. Analyze constraints and output ONLY a valid JSON action. No explanation."
     results = {}
     for rows, cols, mines, n_games in board_configs:
@@ -137,7 +170,12 @@ def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_pe
             positions = [(r, c) for r in range(rows) for c in range(cols)]
             mine_pos = rng.sample(positions, mines)
             game = MinesweeperGame(rows, cols, mine_pos)
-            safe = [(r,c) for r in range(rows) for c in range(cols) if (r,c) not in game.mine_set]
+            safe = [
+                (r, c)
+                for r in range(rows)
+                for c in range(cols)
+                if (r, c) not in game.mine_set
+            ]
             first = rng.choice(safe)
             game.reveal(*first)
             game_score = 0
@@ -149,13 +187,27 @@ def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_pe
                     break
                 board = game.get_board()
                 flags = len(game.flagged)
-                prompt = build_prompt(board, rows, cols, mines, flags, frontier_threshold)
-                messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]
-                text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                prompt = build_prompt(
+                    board, rows, cols, mines, flags, frontier_threshold
+                )
+                messages = [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+                text = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
                 inputs = tokenizer(text, return_tensors="pt").to(model.device)
                 with torch.no_grad():
-                    output = model.generate(**inputs, max_new_tokens=64, do_sample=False, pad_token_id=tokenizer.pad_token_id)
-                response = tokenizer.decode(output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+                    output = model.generate(
+                        **inputs,
+                        max_new_tokens=64,
+                        do_sample=False,
+                        pad_token_id=tokenizer.pad_token_id,
+                    )
+                response = tokenizer.decode(
+                    output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+                )
                 action = parse_llm_action(response)
                 total_moves += 1
                 if action is not None:
@@ -163,7 +215,7 @@ def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_pe
                     r_act, c_act = action["row"], action["col"]
                     if 0 <= r_act < rows and 0 <= c_act < cols:
                         cell_val = board[r_act][c_act]
-                        if cell_val == '.':
+                        if cell_val == ".":
                             valid_moves += 1
                             if action["type"] == "reveal":
                                 result = game.reveal(r_act, c_act)
@@ -177,7 +229,7 @@ def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_pe
                                     game_score += 15
                                 else:
                                     game_score -= 10
-                        elif cell_val == 'F':
+                        elif cell_val == "F":
                             game_score -= 8
                         else:
                             game_score -= 12  # already revealed
@@ -190,8 +242,17 @@ def eval_model(model, tokenizer, board_configs, frontier_threshold, max_moves_pe
         move_rate = valid_moves / max(total_moves, 1) * 100
         avg_score = total_score / max(n_games, 1)
         key = f"{rows}x{cols}"
-        results[key] = {"json_rate": json_rate, "move_rate": move_rate, "wins": wins, "n_games": n_games, "avg_score": avg_score, "total_moves": total_moves}
-        print(f"  {key}: JSON={json_rate:.0f}% ValidMove={move_rate:.0f}% Wins={wins}/{n_games} AvgScore={avg_score:.1f} ({total_moves} moves)")
+        results[key] = {
+            "json_rate": json_rate,
+            "move_rate": move_rate,
+            "wins": wins,
+            "n_games": n_games,
+            "avg_score": avg_score,
+            "total_moves": total_moves,
+        }
+        print(
+            f"  {key}: JSON={json_rate:.0f}% ValidMove={move_rate:.0f}% Wins={wins}/{n_games} AvgScore={avg_score:.1f} ({total_moves} moves)"
+        )
     return results
 
 
@@ -208,24 +269,28 @@ for model_name, model_path in [
     ("SFT-only", "/workspace/sft_merged_model"),
     ("GRPO-400", "/workspace/your_finetuned_model"),
 ]:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Model: {model_name} ({model_path})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     print(f"\nLoading {model_name}...")
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.bfloat16, device_map="auto"
+    )
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     # Test with frontier threshold = 0 (all frontier)
-    print(f"\n--- Frontier for ALL boards (threshold=0) ---")
+    print("\n--- Frontier for ALL boards (threshold=0) ---")
     eval_model(model, tokenizer, board_configs, frontier_threshold=0)
 
     # Test with frontier threshold = 16 (original)
-    print(f"\n--- Compact ≤16, Frontier >16 (threshold=16) ---")
+    print("\n--- Compact ≤16, Frontier >16 (threshold=16) ---")
     eval_model(model, tokenizer, board_configs, frontier_threshold=16)
 
     del model
     torch.cuda.empty_cache()
-    import gc; gc.collect()
+    import gc
+
+    gc.collect()
 
 print("\nComparison complete!")

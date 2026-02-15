@@ -10,11 +10,14 @@ Strategy:
 4. Mix in original frontier reinforcement examples
 5. Very conservative LR
 """
+
 import os
+
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface"
 
 from unsloth import FastLanguageModel
+from trl import SFTConfig, SFTTrainer
 import torch
 import json
 import random
@@ -47,14 +50,24 @@ print(f"Model loaded. Params: {sum(p.numel() for p in model.parameters()) / 1e9:
 model = FastLanguageModel.get_peft_model(
     model,
     r=lora_rank,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
     lora_alpha=lora_rank * 2,
     use_gradient_checkpointing="unsloth",
     random_state=3407,
 )
 trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total = sum(p.numel() for p in model.parameters())
-print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100:.2f}%)")
+print(
+    f"Trainable: {trainable / 1e6:.1f}M / {total / 1e9:.1f}B ({trainable / total * 100:.2f}%)"
+)
 
 # ================================================================
 # Step 3: Build targeted dataset
@@ -64,14 +77,18 @@ rng = random.Random(42)
 # Source 1: 50x50 frontier from original data (same system prompt!)
 original_50x50 = []
 original_frontier_other = []
-with open('/workspace/minesweeper_training_data.jsonl') as f:
+with open("/workspace/minesweeper_training_data.jsonl") as f:
     for line in f:
         ex = json.loads(line)
-        msgs = json.loads(ex['messages']) if isinstance(ex['messages'], str) else ex['messages']
-        user_msg = msgs[1]['content']
-        if 'FRONTIER' not in user_msg:
+        msgs = (
+            json.loads(ex["messages"])
+            if isinstance(ex["messages"], str)
+            else ex["messages"]
+        )
+        user_msg = msgs[1]["content"]
+        if "FRONTIER" not in user_msg:
             continue
-        if ex['board_size'] == '50x50':
+        if ex["board_size"] == "50x50":
             original_50x50.append(msgs)
         else:
             original_frontier_other.append(msgs)
@@ -81,23 +98,29 @@ print(f"Original other frontier (20x20, 30x30): {len(original_frontier_other)}")
 
 # Source 2: New board types from v2 data (swap system prompt)
 v2_novel = defaultdict(list)
-with open('/workspace/minesweeper_v2_data.jsonl') as f:
+with open("/workspace/minesweeper_v2_data.jsonl") as f:
     for line in f:
         ex = json.loads(line)
-        msgs = json.loads(ex['messages']) if isinstance(ex['messages'], str) else ex['messages']
-        user_msg = msgs[1]['content']
-        if 'FRONTIER' not in user_msg:
+        msgs = (
+            json.loads(ex["messages"])
+            if isinstance(ex["messages"], str)
+            else ex["messages"]
+        )
+        user_msg = msgs[1]["content"]
+        if "FRONTIER" not in user_msg:
             continue
-        size = ex['board_size']
-        rows, cols = size.split('x')
+        size = ex["board_size"]
+        rows, cols = size.split("x")
         # Novel: rectangular boards OR small boards that were compact in original
         if rows != cols or int(rows) <= 16:
             # Swap system prompt to original
-            msgs[0]['content'] = ORIGINAL_SYSTEM_PROMPT
+            msgs[0]["content"] = ORIGINAL_SYSTEM_PROMPT
             v2_novel[size].append(msgs)
 
 print("V2 novel boards (system prompt swapped):")
-for size in sorted(v2_novel, key=lambda x: (int(x.split('x')[0]), int(x.split('x')[1]))):
+for size in sorted(
+    v2_novel, key=lambda x: (int(x.split("x")[0]), int(x.split("x")[1]))
+):
     print(f"  {size}: {len(v2_novel[size])}")
 
 # Sample balanced dataset
@@ -109,7 +132,14 @@ focused.extend(rng.sample(original_50x50, n_50x50))
 print(f"\nSampled 50x50 from original: {n_50x50}")
 
 # Rectangular from v2 (prompt swapped)
-rect_target = {'8x12': 200, '10x16': 200, '12x20': 200, '16x30': 150, '20x40': 100, '30x50': 100}
+rect_target = {
+    "8x12": 200,
+    "10x16": 200,
+    "12x20": 200,
+    "16x30": 150,
+    "20x40": 100,
+    "30x50": 100,
+}
 for size, target in rect_target.items():
     avail = v2_novel.get(size, [])
     n = min(target, len(avail))
@@ -118,7 +148,7 @@ for size, target in rect_target.items():
         print(f"Sampled {size} rectangular: {n}")
 
 # Small board frontier from v2 (prompt swapped) - these were compact in original
-small_target = {'6x6': 200, '8x8': 200, '10x10': 200, '16x16': 200}
+small_target = {"6x6": 200, "8x8": 200, "10x10": 200, "16x16": 200}
 for size, target in small_target.items():
     avail = v2_novel.get(size, [])
     n = min(target, len(avail))
@@ -135,7 +165,7 @@ rng.shuffle(focused)
 print(f"\nTotal targeted dataset: {len(focused)} examples")
 
 # Verify prompts
-sys_prompts = set(msgs[0]['content'] for msgs in focused)
+sys_prompts = set(msgs[0]["content"] for msgs in focused)
 print(f"System prompts used: {sys_prompts}")
 
 # ================================================================
@@ -148,28 +178,39 @@ print(f"SFT dataset: {len(sft_dataset)} examples")
 # ================================================================
 # Step 5: Train (very conservative)
 # ================================================================
-from trl import SFTConfig, SFTTrainer
+
 
 def formatting_func(examples):
     messages = examples["messages"]
-    if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    if (
+        isinstance(messages, list)
+        and len(messages) > 0
+        and isinstance(messages[0], dict)
+    ):
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
         return [text]
     else:
-        return [tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-                for msgs in messages]
+        return [
+            tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+            for msgs in messages
+        ]
+
 
 sft_config = SFTConfig(
     output_dir="sft_targeted_checkpoint",
     per_device_train_batch_size=2,
-    gradient_accumulation_steps=8,     # Effective batch = 16
-    learning_rate=2e-6,                # Very conservative (10x lower than original)
+    gradient_accumulation_steps=8,  # Effective batch = 16
+    learning_rate=2e-6,  # Very conservative (10x lower than original)
     lr_scheduler_type="cosine",
     num_train_epochs=1,
     optim="adamw_8bit",
     bf16=True,
     logging_steps=10,
-    save_steps=9999,                   # Don't save intermediate (short run)
+    save_steps=9999,  # Don't save intermediate (short run)
     max_seq_length=max_seq_length,
     warmup_ratio=0.05,
     report_to="none",
@@ -185,9 +226,11 @@ sft_trainer = SFTTrainer(
     formatting_func=formatting_func,
 )
 
-effective_batch = sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+effective_batch = (
+    sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+)
 est_steps = len(sft_dataset) // effective_batch
-print(f"\nTargeted SFT config:")
+print("\nTargeted SFT config:")
 print(f"  LR: {sft_config.learning_rate} (very conservative)")
 print(f"  Batch: {effective_batch}")
 print(f"  Est steps: ~{est_steps}")

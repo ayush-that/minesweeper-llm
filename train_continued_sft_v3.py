@@ -8,10 +8,12 @@ Continued SFT v3: Train on v2 model with 10K examples
 """
 
 import os
+
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface"
 
 from unsloth import FastLanguageModel
+from trl import SFTConfig, SFTTrainer
 import torch
 import json
 import random
@@ -46,8 +48,13 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=lora_rank,
     target_modules=[
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
     ],
     lora_alpha=lora_rank * 2,
     use_gradient_checkpointing="unsloth",
@@ -56,7 +63,9 @@ model = FastLanguageModel.get_peft_model(
 
 trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total = sum(p.numel() for p in model.parameters())
-print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100:.2f}%)")
+print(
+    f"Trainable: {trainable / 1e6:.1f}M / {total / 1e9:.1f}B ({trainable / total * 100:.2f}%)"
+)
 
 # ================================================================
 # Step 3: Create 10K dataset - boost small boards
@@ -65,7 +74,7 @@ print(f"Trainable: {trainable/1e6:.1f}M / {total/1e9:.1f}B ({trainable/total*100
 data_file = "minesweeper_v2_data.jsonl"
 
 all_data = []
-with open(data_file, 'r') as f:
+with open(data_file, "r") as f:
     for line in f:
         ex = json.loads(line.strip())
         all_data.append(ex)
@@ -74,7 +83,7 @@ print(f"Full dataset: {len(all_data)} examples")
 
 by_size = defaultdict(list)
 for ex in all_data:
-    by_size[ex['board_size']].append(ex)
+    by_size[ex["board_size"]].append(ex)
 
 # Use a different seed than v2 training (42) to get different examples
 rng = random.Random(123)
@@ -82,19 +91,19 @@ focused = []
 
 # Boost small boards (6x6 was weak in v2)
 target_per_size = {
-    '6x6': 1000,     # Doubled! Was weak (-1.9) in v2
-    '8x8': 800,      # Boost
-    '8x12': 500,     # Rectangular
-    '10x10': 700,    # Boost
-    '10x16': 500,    # Rectangular
-    '12x20': 500,    # Rectangular
-    '16x16': 700,    # Strong, reinforce
-    '16x30': 500,    # Rectangular
-    '20x20': 700,    # Reinforce
-    '20x40': 500,    # Rectangular
-    '30x30': 700,    # Reinforce
-    '30x50': 500,    # Rectangular
-    '50x50': 1000,   # Large boards
+    "6x6": 1000,  # Doubled! Was weak (-1.9) in v2
+    "8x8": 800,  # Boost
+    "8x12": 500,  # Rectangular
+    "10x10": 700,  # Boost
+    "10x16": 500,  # Rectangular
+    "12x20": 500,  # Rectangular
+    "16x16": 700,  # Strong, reinforce
+    "16x30": 500,  # Rectangular
+    "20x20": 700,  # Reinforce
+    "20x40": 500,  # Rectangular
+    "30x30": 700,  # Reinforce
+    "30x50": 500,  # Rectangular
+    "50x50": 1000,  # Large boards
 }
 
 for size, target in target_per_size.items():
@@ -110,8 +119,10 @@ for size, target in target_per_size.items():
 rng.shuffle(focused)
 print(f"\nFocused dataset: {len(focused)} examples")
 
-deducible_count = sum(1 for e in focused if e['is_deducible'])
-print(f"Deducible: {deducible_count}/{len(focused)} ({deducible_count/len(focused)*100:.1f}%)")
+deducible_count = sum(1 for e in focused if e["is_deducible"])
+print(
+    f"Deducible: {deducible_count}/{len(focused)} ({deducible_count / len(focused) * 100:.1f}%)"
+)
 
 # ================================================================
 # Step 4: Prepare SFT Dataset
@@ -119,7 +130,7 @@ print(f"Deducible: {deducible_count}/{len(focused)} ({deducible_count/len(focuse
 
 sft_items = []
 for ex in focused:
-    messages = json.loads(ex['messages'])
+    messages = json.loads(ex["messages"])
     sft_items.append({"messages": messages})
 
 sft_dataset = Dataset.from_list(sft_items)
@@ -133,24 +144,34 @@ print(f"Assistant: {msgs[2]['content']}")
 # Step 5: SFT Training
 # ================================================================
 
-from trl import SFTConfig, SFTTrainer
 
 def formatting_func(examples):
     messages = examples["messages"]
-    if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    if (
+        isinstance(messages, list)
+        and len(messages) > 0
+        and isinstance(messages[0], dict)
+    ):
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
         return [text]
     else:
-        return [tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-                for msgs in messages]
+        return [
+            tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+            for msgs in messages
+        ]
+
 
 sft_config = SFTConfig(
     output_dir="sft_v3_checkpoint",
     per_device_train_batch_size=2,
-    gradient_accumulation_steps=8,    # Effective batch = 16
-    learning_rate=3e-6,               # Even lower LR for v3 (was 5e-6 for v2)
+    gradient_accumulation_steps=8,  # Effective batch = 16
+    learning_rate=3e-6,  # Even lower LR for v3 (was 5e-6 for v2)
     lr_scheduler_type="cosine",
-    num_train_epochs=2,               # 2 epochs for better convergence
+    num_train_epochs=2,  # 2 epochs for better convergence
     optim="adamw_8bit",
     bf16=True,
     logging_steps=10,
@@ -171,12 +192,16 @@ sft_trainer = SFTTrainer(
     formatting_func=formatting_func,
 )
 
-effective_batch = sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+effective_batch = (
+    sft_config.per_device_train_batch_size * sft_config.gradient_accumulation_steps
+)
 est_steps = len(sft_dataset) * sft_config.num_train_epochs // effective_batch
-print(f"\nv3 SFT config:")
-print(f"  Starting from: v2 finetuned model")
+print("\nv3 SFT config:")
+print("  Starting from: v2 finetuned model")
 print(f"  Epochs: {sft_config.num_train_epochs}")
-print(f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}")
+print(
+    f"  Batch: {sft_config.per_device_train_batch_size} x {sft_config.gradient_accumulation_steps} = {effective_batch}"
+)
 print(f"  LR: {sft_config.learning_rate}")
 print(f"  Estimated steps: ~{est_steps}")
 

@@ -11,18 +11,17 @@ Uses multiprocessing for parallel generation.
 import json
 import random
 import time
-import os
-from typing import List, Tuple, Dict, Set, Optional
+from typing import List, Tuple, Dict, Set
 from collections import defaultdict
 from multiprocessing import Pool, cpu_count
-from dataclasses import dataclass, field
 
-from solver import solve_board, MinesweeperSolver
+from solver import solve_board
 
 
 # ================================================================
 # Game Engine (lightweight, no dependencies)
 # ================================================================
+
 
 class MineGame:
     """Lightweight Minesweeper game for data generation."""
@@ -47,7 +46,11 @@ class MineGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = r + dr, c + dc
-                        if 0 <= nr < rows and 0 <= nc < cols and self.internal[nr][nc] == -1:
+                        if (
+                            0 <= nr < rows
+                            and 0 <= nc < cols
+                            and self.internal[nr][nc] == -1
+                        ):
                             count += 1
                 self.internal[r][c] = count
 
@@ -73,9 +76,12 @@ class MineGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = cr + dr, cc + dc
-                        if (0 <= nr < self.rows and 0 <= nc < self.cols
-                                and (nr, nc) not in self.revealed
-                                and (nr, nc) not in self.flagged):
+                        if (
+                            0 <= nr < self.rows
+                            and 0 <= nc < self.cols
+                            and (nr, nc) not in self.revealed
+                            and (nr, nc) not in self.flagged
+                        ):
                             stack.append((nr, nc))
 
         # Check win
@@ -90,11 +96,11 @@ class MineGame:
 
     def get_board(self) -> List[List[str]]:
         """Get visible board."""
-        board = [['.' for _ in range(self.cols)] for _ in range(self.rows)]
+        board = [["." for _ in range(self.cols)] for _ in range(self.rows)]
         for r, c in self.revealed:
             board[r][c] = str(self.internal[r][c])
         for r, c in self.flagged:
-            board[r][c] = 'F'
+            board[r][c] = "F"
         return board
 
     def cells_revealed_before_action(self) -> int:
@@ -106,12 +112,14 @@ class MineGame:
 # Prompt Builders
 # ================================================================
 
-def build_compact_prompt(board: List[List[str]], rows: int, cols: int,
-                         num_mines: int, flags_placed: int) -> str:
+
+def build_compact_prompt(
+    board: List[List[str]], rows: int, cols: int, num_mines: int, flags_placed: int
+) -> str:
     """Build compact grid format prompt for boards <= 16x16."""
     mines_left = num_mines - flags_placed
-    grid_lines = [''.join(row) for row in board]
-    grid_str = '\n'.join(grid_lines)
+    grid_lines = ["".join(row) for row in board]
+    grid_str = "\n".join(grid_lines)
 
     return f"""MINESWEEPER {rows}x{cols} MINES:{num_mines} FLAGS:{flags_placed} LEFT:{mines_left}
 {grid_str}
@@ -123,8 +131,9 @@ RULES: .=hidden F=flag 0-8=adjacent mines
 Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
 
 
-def build_frontier_prompt(board: List[List[str]], rows: int, cols: int,
-                          num_mines: int, flags_placed: int) -> str:
+def build_frontier_prompt(
+    board: List[List[str]], rows: int, cols: int, num_mines: int, flags_placed: int
+) -> str:
     """Build frontier sparse format prompt for boards > 16x16."""
     mines_left = num_mines - flags_placed
 
@@ -134,7 +143,7 @@ def build_frontier_prompt(board: List[List[str]], rows: int, cols: int,
 
     for r in range(rows):
         for c in range(cols):
-            if board[r][c] not in '012345678':
+            if board[r][c] not in "012345678":
                 continue
             num = int(board[r][c])
             flags = 0
@@ -145,22 +154,28 @@ def build_frontier_prompt(board: List[List[str]], rows: int, cols: int,
                         continue
                     nr, nc = r + dr, c + dc
                     if 0 <= nr < rows and 0 <= nc < cols:
-                        if board[nr][nc] == 'F':
+                        if board[nr][nc] == "F":
                             flags += 1
-                        elif board[nr][nc] == '.':
+                        elif board[nr][nc] == ".":
                             hidden.append((nr, nc))
                             all_hidden_near_numbers.add((nr, nc))
 
             if hidden:  # Only include cells that still have hidden neighbors
-                hidden_str = ''.join(f'({hr},{hc})' for hr, hc in hidden)
-                frontier_info.append(f'R{r}C{c}={num} flags:{flags} hidden:[{hidden_str}]')
+                hidden_str = "".join(f"({hr},{hc})" for hr, hc in hidden)
+                frontier_info.append(
+                    f"R{r}C{c}={num} flags:{flags} hidden:[{hidden_str}]"
+                )
 
     # Count total hidden and interior
-    total_hidden = sum(1 for r in range(rows) for c in range(cols) if board[r][c] == '.')
+    total_hidden = sum(
+        1 for r in range(rows) for c in range(cols) if board[r][c] == "."
+    )
     interior_count = total_hidden - len(all_hidden_near_numbers)
 
-    frontier_str = '\n'.join(frontier_info[:200])  # Cap to prevent token explosion
-    hidden_near_str = ''.join(f'({r},{c})' for r, c in sorted(all_hidden_near_numbers)[:100])
+    frontier_str = "\n".join(frontier_info[:200])  # Cap to prevent token explosion
+    hidden_near_str = "".join(
+        f"({r},{c})" for r, c in sorted(all_hidden_near_numbers)[:100]
+    )
 
     return f"""MINESWEEPER {rows}x{cols} MINES:{num_mines} FLAGS:{flags_placed} LEFT:{mines_left}
 FRONTIER (numbered cells with hidden neighbors):
@@ -176,9 +191,14 @@ RULES: .=hidden F=flag 0-8=adjacent mines
 Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}"""
 
 
-def build_prompt(board: List[List[str]], rows: int, cols: int,
-                 num_mines: int, flags_placed: int,
-                 frontier_threshold: int = 16) -> str:
+def build_prompt(
+    board: List[List[str]],
+    rows: int,
+    cols: int,
+    num_mines: int,
+    flags_placed: int,
+    frontier_threshold: int = 16,
+) -> str:
     """Build size-adaptive prompt. Compact for small, frontier for large."""
     if rows <= frontier_threshold and cols <= frontier_threshold:
         return build_compact_prompt(board, rows, cols, num_mines, flags_placed)
@@ -187,9 +207,9 @@ def build_prompt(board: List[List[str]], rows: int, cols: int,
 
 
 SYSTEM_PROMPT = (
-    'You are an expert Minesweeper AI in a competitive tournament. '
-    'Maximize points: +15 safe reveal, +15 correct flag, -25 mine hit, -10 wrong flag, -12 redundant move. '
-    'Flag ONLY confirmed mines. Reveal safe cells first. Never target already revealed/flagged cells. '
+    "You are an expert Minesweeper AI in a competitive tournament. "
+    "Maximize points: +15 safe reveal, +15 correct flag, -25 mine hit, -10 wrong flag, -12 redundant move. "
+    "Flag ONLY confirmed mines. Reveal safe cells first. Never target already revealed/flagged cells. "
     'Output ONLY: {"type":"reveal"|"flag","row":R,"col":C}'
 )
 
@@ -197,6 +217,7 @@ SYSTEM_PROMPT = (
 # ================================================================
 # Single Game Generator
 # ================================================================
+
 
 def generate_single_game(args) -> List[Dict]:
     """
@@ -214,8 +235,9 @@ def generate_single_game(args) -> List[Dict]:
     game = MineGame(rows, cols, mine_positions)
 
     # Random first safe reveal (simulates controller-provided opening)
-    safe_cells = [(r, c) for r in range(rows) for c in range(cols)
-                  if (r, c) not in game.mine_set]
+    safe_cells = [
+        (r, c) for r in range(rows) for c in range(cols) if (r, c) not in game.mine_set
+    ]
     first_cell = rng.choice(safe_cells)
     game.reveal(*first_cell)
 
@@ -236,7 +258,9 @@ def generate_single_game(args) -> List[Dict]:
         all_deducible = [(t, r2, c2) for t, r2, c2 in certain_moves]
 
         # Build the prompt
-        prompt_text = build_prompt(board, rows, cols, num_mines, flags_placed, frontier_threshold)
+        prompt_text = build_prompt(
+            board, rows, cols, num_mines, flags_placed, frontier_threshold
+        )
 
         # Build target action
         best_action = {"type": action_type, "row": r, "col": c}
@@ -251,7 +275,7 @@ def generate_single_game(args) -> List[Dict]:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt_text},
-            {"role": "assistant", "content": target_response}
+            {"role": "assistant", "content": target_response},
         ]
 
         # Build GRPO prompt format
@@ -274,11 +298,15 @@ def generate_single_game(args) -> List[Dict]:
             "best_move": target_response,
             "is_deducible": is_deducible,
             "game_stage": (
-                "opening" if reveal_pct < 0.05 else
-                "early" if reveal_pct < 0.15 else
-                "mid" if reveal_pct < 0.50 else
-                "late" if reveal_pct < 0.80 else
-                "endgame"
+                "opening"
+                if reveal_pct < 0.05
+                else "early"
+                if reveal_pct < 0.15
+                else "mid"
+                if reveal_pct < 0.50
+                else "late"
+                if reveal_pct < 0.80
+                else "endgame"
             ),
             "board_size": f"{rows}x{cols}",
         }
@@ -326,8 +354,9 @@ def generate_near_failure_examples(args) -> List[Dict]:
 
     game = MineGame(rows, cols, mine_positions)
 
-    safe_cells = [(r, c) for r in range(rows) for c in range(cols)
-                  if (r, c) not in game.mine_set]
+    safe_cells = [
+        (r, c) for r in range(rows) for c in range(cols) if (r, c) not in game.mine_set
+    ]
     first_cell = rng.choice(safe_cells)
     game.reveal(*first_cell)
 
@@ -368,14 +397,16 @@ def generate_near_failure_examples(args) -> List[Dict]:
         if reveal_moves:
             # Pick one
             t, r, c = reveal_moves[0]
-            prompt_text = build_prompt(board, rows, cols, num_mines, flags_placed, frontier_threshold)
+            prompt_text = build_prompt(
+                board, rows, cols, num_mines, flags_placed, frontier_threshold
+            )
             best_action = {"type": "reveal", "row": r, "col": c}
             target_response = json.dumps(best_action)
 
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt_text},
-                {"role": "assistant", "content": target_response}
+                {"role": "assistant", "content": target_response},
             ]
             grpo_prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -390,9 +421,13 @@ def generate_near_failure_examples(args) -> List[Dict]:
                 "cols": cols,
                 "num_mines": num_mines,
                 "flagged_positions": json.dumps(list(game.flagged)),
-                "revealed_positions": json.dumps([(r2, c2) for r2, c2 in game.revealed]),
+                "revealed_positions": json.dumps(
+                    [(r2, c2) for r2, c2 in game.revealed]
+                ),
                 "board_state": json.dumps(board),
-                "deducible_moves": json.dumps([(t2, r2, c2) for t2, r2, c2 in certain_moves]),
+                "deducible_moves": json.dumps(
+                    [(t2, r2, c2) for t2, r2, c2 in certain_moves]
+                ),
                 "best_move": target_response,
                 "is_deducible": True,
                 "game_stage": "near_failure",
@@ -406,6 +441,7 @@ def generate_near_failure_examples(args) -> List[Dict]:
 # ================================================================
 # Main Generator
 # ================================================================
+
 
 def generate_dataset(
     target_count: int = 50000,
@@ -468,9 +504,13 @@ def generate_dataset(
 
             # 10% near-failure examples
             if rng.random() < 0.1:
-                near_failure_args.append((rows, cols, num_mines, game_seed, frontier_threshold))
+                near_failure_args.append(
+                    (rows, cols, num_mines, game_seed, frontier_threshold)
+                )
 
-    print(f"Total games to play: {len(all_args)} + {len(near_failure_args)} near-failure")
+    print(
+        f"Total games to play: {len(all_args)} + {len(near_failure_args)} near-failure"
+    )
 
     # Process with multiprocessing
     all_examples = []
@@ -488,7 +528,9 @@ def generate_dataset(
     print("Generating near-failure examples...")
     t0 = time.time()
     with Pool(num_workers) as pool:
-        nf_results = pool.map(generate_near_failure_examples, near_failure_args, chunksize=4)
+        nf_results = pool.map(
+            generate_near_failure_examples, near_failure_args, chunksize=4
+        )
     nf_count = 0
     for game_examples in nf_results:
         all_examples.extend(game_examples)
@@ -508,29 +550,33 @@ def generate_dataset(
     # Statistics
     stage_counts = defaultdict(int)
     size_counts = defaultdict(int)
-    deducible_count = sum(1 for e in all_examples if e['is_deducible'])
+    deducible_count = sum(1 for e in all_examples if e["is_deducible"])
 
     for e in all_examples:
-        stage_counts[e['game_stage']] += 1
-        size_counts[e['board_size']] += 1
+        stage_counts[e["game_stage"]] += 1
+        size_counts[e["board_size"]] += 1
 
-    print(f"\nBoard size distribution:")
-    for size in sorted(size_counts.keys(), key=lambda x: (int(x.split('x')[0]), int(x.split('x')[1]))):
+    print("\nBoard size distribution:")
+    for size in sorted(
+        size_counts.keys(), key=lambda x: (int(x.split("x")[0]), int(x.split("x")[1]))
+    ):
         cnt = size_counts[size]
         print(f"  {size}: {cnt} ({cnt / len(all_examples) * 100:.1f}%)")
 
-    print(f"\nGame stage distribution:")
-    for stage in ['opening', 'early', 'mid', 'late', 'endgame', 'near_failure']:
+    print("\nGame stage distribution:")
+    for stage in ["opening", "early", "mid", "late", "endgame", "near_failure"]:
         cnt = stage_counts.get(stage, 0)
         print(f"  {stage}: {cnt} ({cnt / len(all_examples) * 100:.1f}%)")
 
-    print(f"\nDeducible: {deducible_count} ({deducible_count / len(all_examples) * 100:.1f}%)")
+    print(
+        f"\nDeducible: {deducible_count} ({deducible_count / len(all_examples) * 100:.1f}%)"
+    )
 
     # Save as JSONL
     print(f"\nSaving to {output_file}...")
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         for example in all_examples:
-            f.write(json.dumps(example) + '\n')
+            f.write(json.dumps(example) + "\n")
 
     print(f"Done! {len(all_examples)} examples saved.")
     return all_examples
@@ -540,10 +586,24 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate Minesweeper training data")
-    parser.add_argument("--target", type=int, default=50000, help="Target number of examples")
-    parser.add_argument("--workers", type=int, default=None, help="Number of parallel workers")
-    parser.add_argument("--output", type=str, default="minesweeper_training_data.jsonl", help="Output file")
-    parser.add_argument("--frontier-threshold", type=int, default=16, help="Board size threshold for frontier format")
+    parser.add_argument(
+        "--target", type=int, default=50000, help="Target number of examples"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None, help="Number of parallel workers"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="minesweeper_training_data.jsonl",
+        help="Output file",
+    )
+    parser.add_argument(
+        "--frontier-threshold",
+        type=int,
+        default=16,
+        help="Board size threshold for frontier format",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 

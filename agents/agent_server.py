@@ -3,6 +3,7 @@
 Persistent Minesweeper Agent Server
 Keeps model loaded in memory and watches for new game states
 """
+
 import json
 import time
 import yaml
@@ -68,7 +69,9 @@ class AgentServer:
             if sequence <= self.last_sequence:
                 return None, sequence
 
-            print(f"\nProcessing Round {round_num}, Sequence {sequence}: {game_state_file.name}")
+            print(
+                f"\nProcessing Round {round_num}, Sequence {sequence}: {game_state_file.name}"
+            )
 
             # Generate action (model already loaded!)
             action, tl, gt = self.player.play_action(game_state, **self.gen_kwargs)
@@ -81,11 +84,15 @@ class AgentServer:
                 if tl and gt:
                     action["_inference_time"] = gt
                     action["_tokens_generated"] = tl
-                    print(f"⚡ Stats: {tl} tokens in {gt:.2f}s ({tl/gt:.1f} tok/s)")
+                    print(f"⚡ Stats: {tl} tokens in {gt:.2f}s ({tl / gt:.1f} tok/s)")
                 return action, sequence
             else:
                 print("Failed to generate valid action")
-                return {"error": "parse_failed", "_sequence": sequence, "_round": round_num}, sequence
+                return {
+                    "error": "parse_failed",
+                    "_sequence": sequence,
+                    "_round": round_num,
+                }, sequence
 
         except Exception as e:
             print(f"Error processing game state: {e}")
@@ -117,7 +124,7 @@ class AgentServer:
 
                             # Atomic write: write to temp file first, then rename
                             # This prevents controller from reading partial JSON
-                            temp_file = action_file.with_suffix('.tmp')
+                            temp_file = action_file.with_suffix(".tmp")
                             with open(temp_file, "w") as f:
                                 json.dump(action, f, indent=2)
 
@@ -155,7 +162,7 @@ if __name__ == "__main__":
         "--config",
         type=str,
         default="minesweeper_config.yaml",
-        help="Path to config file"
+        help="Path to config file",
     )
     args = parser.parse_args()
 

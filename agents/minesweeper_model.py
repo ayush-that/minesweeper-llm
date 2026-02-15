@@ -1,6 +1,7 @@
 """
 Minesweeper Model - Loads fine-tuned Qwen2.5-14B-Instruct
 """
+
 import os
 import time
 from typing import Optional, List
@@ -31,7 +32,7 @@ class MinesweeperAgent(object):
         """
         if system_prompt is None:
             system_prompt = (
-                'You are a Minesweeper AI. '
+                "You are a Minesweeper AI. "
                 'Output ONLY valid JSON: {"type":"reveal"|"flag","row":R,"col":C}'
             )
 
@@ -83,15 +84,17 @@ class MinesweeperAgent(object):
             generation_time = time.time() - start_time
 
         batch_outs = self.tokenizer.batch_decode(
-            generated_ids[:, model_inputs.input_ids.shape[1]:],
-            skip_special_tokens=True
+            generated_ids[:, model_inputs.input_ids.shape[1] :],
+            skip_special_tokens=True,
         )
 
         batch_outs = [output.strip() for output in batch_outs]
 
         if tgps_show_var:
-            token_len = sum(len(generated_ids[i]) - model_inputs.input_ids.shape[1]
-                          for i in range(len(generated_ids)))
+            token_len = sum(
+                len(generated_ids[i]) - model_inputs.input_ids.shape[1]
+                for i in range(len(generated_ids))
+            )
             return (
                 batch_outs[0] if len(batch_outs) == 1 else batch_outs,
                 token_len,
@@ -104,7 +107,9 @@ class MinesweeperAgent(object):
 if __name__ == "__main__":
     agent = MinesweeperAgent()
     test_prompt = 'MINESWEEPER 4x4 MINES:3 FLAGS:0 LEFT:3\n....\n....\n....\n....\nRULES: .=hidden F=flag 0-8=adjacent mines\nOutput ONLY: {"type":"reveal"|"flag","row":R,"col":C}'
-    response, tl, tm = agent.generate_response(test_prompt, tgps_show=True, max_new_tokens=64)
+    response, tl, tm = agent.generate_response(
+        test_prompt, tgps_show=True, max_new_tokens=64
+    )
     print(f"Response: {response}")
     if tl and tm:
         print(f"Tokens: {tl}, Time: {tm:.2f}s")

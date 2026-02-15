@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Evaluation with improved prompts, max_new_tokens=128, 50x50 boards.
 Tests both v1 and v2 models if available."""
+
 import os
+
 os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
 import json
@@ -14,6 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # ================================================================
 # Game Engine
 # ================================================================
+
 
 class MinesweeperGame:
     def __init__(self, rows, cols, mine_positions):
@@ -34,7 +37,11 @@ class MinesweeperGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = r + dr, c + dc
-                        if 0 <= nr < rows and 0 <= nc < cols and self._board[nr][nc] == -1:
+                        if (
+                            0 <= nr < rows
+                            and 0 <= nc < cols
+                            and self._board[nr][nc] == -1
+                        ):
                             count += 1
                 self._board[r][c] = count
         self.revealed = set()
@@ -57,9 +64,12 @@ class MinesweeperGame:
                         if dr == 0 and dc == 0:
                             continue
                         nr, nc = cr + dr, cc + dc
-                        if (0 <= nr < self.rows and 0 <= nc < self.cols
-                                and (nr, nc) not in self.revealed
-                                and (nr, nc) not in self.flagged):
+                        if (
+                            0 <= nr < self.rows
+                            and 0 <= nc < self.cols
+                            and (nr, nc) not in self.revealed
+                            and (nr, nc) not in self.flagged
+                        ):
                             stack.append((nr, nc))
         safe_total = self.rows * self.cols - self.num_mines
         if len(self.revealed) >= safe_total:
@@ -71,11 +81,11 @@ class MinesweeperGame:
         self.flagged.add((r, c))
 
     def get_board(self):
-        board = [['.' for _ in range(self.cols)] for _ in range(self.rows)]
+        board = [["." for _ in range(self.cols)] for _ in range(self.rows)]
         for r, c in self.revealed:
             board[r][c] = str(self._board[r][c])
         for r, c in self.flagged:
-            board[r][c] = 'F'
+            board[r][c] = "F"
         return board
 
     @property
@@ -85,11 +95,15 @@ class MinesweeperGame:
 
 def parse_llm_action(response):
     best = None
-    for match in re.finditer(r'\{[^{}]*\}', response):
+    for match in re.finditer(r"\{[^{}]*\}", response):
         try:
             action = json.loads(match.group())
-            if ("type" in action and "row" in action and "col" in action
-                    and action["type"] in ["reveal", "flag"]):
+            if (
+                "type" in action
+                and "row" in action
+                and "col" in action
+                and action["type"] in ["reveal", "flag"]
+            ):
                 action["row"] = int(action["row"])
                 action["col"] = int(action["col"])
                 best = action
@@ -104,22 +118,40 @@ def build_frontier_prompt(board, rows, cols, mines, flags):
     all_hidden_near_numbers = set()
     for r in range(rows):
         for c in range(cols):
-            if board[r][c] not in '012345678':
+            if board[r][c] not in "012345678":
                 continue
             num = int(board[r][c])
-            fl = sum(1 for dr in [-1,0,1] for dc in [-1,0,1]
-                    if not (dr==0 and dc==0) and 0<=r+dr<rows and 0<=c+dc<cols and board[r+dr][c+dc]=='F')
-            hidden = [(r+dr,c+dc) for dr in [-1,0,1] for dc in [-1,0,1]
-                     if not (dr==0 and dc==0) and 0<=r+dr<rows and 0<=c+dc<cols and board[r+dr][c+dc]=='.']
+            fl = sum(
+                1
+                for dr in [-1, 0, 1]
+                for dc in [-1, 0, 1]
+                if not (dr == 0 and dc == 0)
+                and 0 <= r + dr < rows
+                and 0 <= c + dc < cols
+                and board[r + dr][c + dc] == "F"
+            )
+            hidden = [
+                (r + dr, c + dc)
+                for dr in [-1, 0, 1]
+                for dc in [-1, 0, 1]
+                if not (dr == 0 and dc == 0)
+                and 0 <= r + dr < rows
+                and 0 <= c + dc < cols
+                and board[r + dr][c + dc] == "."
+            ]
             if hidden:
                 for h in hidden:
                     all_hidden_near_numbers.add(h)
-                hs = ''.join(f'({hr},{hc})' for hr,hc in hidden)
-                frontier_info.append(f'R{r}C{c}={num} flags:{fl} hidden:[{hs}]')
-    total_hidden = sum(1 for r in range(rows) for c in range(cols) if board[r][c] == '.')
+                hs = "".join(f"({hr},{hc})" for hr, hc in hidden)
+                frontier_info.append(f"R{r}C{c}={num} flags:{fl} hidden:[{hs}]")
+    total_hidden = sum(
+        1 for r in range(rows) for c in range(cols) if board[r][c] == "."
+    )
     interior_count = total_hidden - len(all_hidden_near_numbers)
-    frontier_str = '\n'.join(frontier_info[:200])
-    hidden_near_str = ''.join(f'({r},{c})' for r,c in sorted(all_hidden_near_numbers)[:100])
+    frontier_str = "\n".join(frontier_info[:200])
+    hidden_near_str = "".join(
+        f"({r},{c})" for r, c in sorted(all_hidden_near_numbers)[:100]
+    )
     return (
         f"MINESWEEPER {rows}x{cols} MINES:{mines} FLAGS:{flags} LEFT:{mines_left}\n"
         f"FRONTIER (numbered cells with hidden neighbors):\n{frontier_str}\n"
@@ -131,7 +163,7 @@ def build_frontier_prompt(board, rows, cols, mines, flags):
         f"- Flag certain mines FIRST, then reveal certain safe cells\n"
         f"- NEVER act on already revealed or flagged cells\n"
         f"- Choose ONLY from HIDDEN NEAR NUMBERS cells listed above\n"
-        f"Output ONLY: {{\"type\":\"reveal\"|\"flag\",\"row\":R,\"col\":C}}"
+        f'Output ONLY: {{"type":"reveal"|"flag","row":R,"col":C}}'
     )
 
 
@@ -139,24 +171,30 @@ def build_frontier_prompt(board, rows, cols, mines, flags):
 SYS_PROMPTS = {
     "original": "You are an expert Minesweeper AI. Analyze constraints and output ONLY a valid JSON action. No explanation.",
     "tournament": (
-        'You are an expert Minesweeper AI in a competitive tournament. '
-        'Maximize points: +15 safe reveal, +15 correct flag, -25 mine hit, -10 wrong flag, -12 redundant move. '
-        'Flag ONLY confirmed mines. Reveal safe cells first. Never target already revealed/flagged cells. '
+        "You are an expert Minesweeper AI in a competitive tournament. "
+        "Maximize points: +15 safe reveal, +15 correct flag, -25 mine hit, -10 wrong flag, -12 redundant move. "
+        "Flag ONLY confirmed mines. Reveal safe cells first. Never target already revealed/flagged cells. "
         'Output ONLY: {"type":"reveal"|"flag","row":R,"col":C}'
     ),
 }
-SYS_PROMPT = SYS_PROMPTS.get(os.environ.get("EVAL_PROMPT", "tournament"), SYS_PROMPTS["tournament"])
+SYS_PROMPT = SYS_PROMPTS.get(
+    os.environ.get("EVAL_PROMPT", "tournament"), SYS_PROMPTS["tournament"]
+)
 
 
-def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tokens=128):
+def evaluate_model(
+    model_path, model_name_label, board_configs=None, max_new_tokens=128
+):
     """Run full evaluation on a model."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"EVALUATING: {model_name_label}")
     print(f"Model: {model_path}")
     print(f"max_new_tokens: {max_new_tokens}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.bfloat16, device_map="auto"
+    )
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     if board_configs is None:
@@ -196,7 +234,12 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
             positions = [(r, c) for r in range(rows) for c in range(cols)]
             mine_pos = rng.sample(positions, mines)
             game = MinesweeperGame(rows, cols, mine_pos)
-            safe = [(r,c) for r in range(rows) for c in range(cols) if (r,c) not in game.mine_set]
+            safe = [
+                (r, c)
+                for r in range(rows)
+                for c in range(cols)
+                if (r, c) not in game.mine_set
+            ]
             first = rng.choice(safe)
             game.reveal(*first)
 
@@ -216,8 +259,13 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
                 board = game.get_board()
                 flags = len(game.flagged)
                 prompt = build_frontier_prompt(board, rows, cols, mines, flags)
-                messages = [{"role": "system", "content": SYS_PROMPT}, {"role": "user", "content": prompt}]
-                text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                messages = [
+                    {"role": "system", "content": SYS_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
+                text = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
                 inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
                 with torch.no_grad():
@@ -227,7 +275,9 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
                         do_sample=False,
                         pad_token_id=tokenizer.pad_token_id,
                     )
-                response = tokenizer.decode(output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+                response = tokenizer.decode(
+                    output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+                )
                 resp_tokens = output[0].shape[0] - inputs.input_ids.shape[1]
 
                 # Track verbosity
@@ -253,7 +303,7 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
                     r_act, c_act = action["row"], action["col"]
                     if 0 <= r_act < rows and 0 <= c_act < cols:
                         cell_val = board[r_act][c_act]
-                        if cell_val == '.':
+                        if cell_val == ".":
                             valid_moves += 1
                             if action["type"] == "reveal":
                                 result = game.reveal(r_act, c_act)
@@ -288,9 +338,15 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
         avg_score = total_score / max(n_games, 1)
 
         print(f"{rows}x{cols} ({n_games} games, {total_moves} moves):")
-        print(f"  JSON={json_rate:.0f}% ValidMove={move_rate:.0f}% Wins={wins}/{n_games} AvgScore={avg_score:.1f}")
-        print(f"  RevealSafe={reveal_safe} RevealMine={reveal_mine} FlagCorrect={flag_correct} FlagWrong={flag_wrong}")
-        print(f"  Redundant={redundant} OOB={oob} InvalidJSON={invalid_json} Verbose={verbose_count}")
+        print(
+            f"  JSON={json_rate:.0f}% ValidMove={move_rate:.0f}% Wins={wins}/{n_games} AvgScore={avg_score:.1f}"
+        )
+        print(
+            f"  RevealSafe={reveal_safe} RevealMine={reveal_mine} FlagCorrect={flag_correct} FlagWrong={flag_wrong}"
+        )
+        print(
+            f"  Redundant={redundant} OOB={oob} InvalidJSON={invalid_json} Verbose={verbose_count}"
+        )
 
         overall_score += total_score
         overall_games += n_games
@@ -300,8 +356,12 @@ def evaluate_model(model_path, model_name_label, board_configs=None, max_new_tok
 
     print(f"\n--- OVERALL ({model_name_label}) ---")
     print(f"Games: {overall_games}, Moves: {overall_moves}, Wins: {overall_wins}")
-    print(f"Valid moves: {overall_valid}/{overall_moves} ({overall_valid/max(overall_moves,1)*100:.0f}%)")
-    print(f"Total score: {overall_score}, Avg per game: {overall_score/max(overall_games,1):.1f}")
+    print(
+        f"Valid moves: {overall_valid}/{overall_moves} ({overall_valid / max(overall_moves, 1) * 100:.0f}%)"
+    )
+    print(
+        f"Total score: {overall_score}, Avg per game: {overall_score / max(overall_games, 1):.1f}"
+    )
 
     # Clean up GPU memory
     del model
